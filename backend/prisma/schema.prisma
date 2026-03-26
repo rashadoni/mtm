@@ -1,0 +1,372 @@
+// MTM Backend — Prisma Schema
+// PostgreSQL database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== USERS & AUTH =====
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String
+  email         String     @unique
+  phone         String?
+  password      String     // bcrypt hash
+  role          Role       @default(AGENT)
+  status        UserStatus @default(ACTIVE)
+  avatar        String?
+  region        String?
+
+  // Device info (for agents)
+  deviceModel   String?
+  deviceOS      String?
+  appVersion    String?
+  lastSyncAt    DateTime?
+
+  // Relations
+  routes        Route[]
+  visits        Visit[]
+  tasks         Task[]       @relation("AssignedTasks")
+  createdTasks  Task[]       @relation("CreatedTasks")
+  photos        Photo[]
+  alerts        Alert[]
+  auditLogs     AuditLog[]
+  locations     AgentLocation[]
+  notifications Notification[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+// ===== CUSTOMERS =====
+enum CustomerCategory {
+  RETAIL
+  WHOLESALE
+  DISTRIBUTOR
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Customer {
+  id            String           @id @default(cuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  category      CustomerCategory @default(RETAIL)
+  status        CustomerStatus   @default(ACTIVE)
+  lat           Float?
+  lng           Float?
+  rating        Float?           @default(0)
+  notes         String?
+
+  // Relations
+  visits        Visit[]
+  routePoints   RoutePoint[]
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([name])
+  @@index([category])
+  @@index([status])
+}
+
+// ===== ROUTES =====
+enum RouteStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Route {
+  id          String      @id @default(cuid())
+  name        String
+  agentId     String
+  agent       User        @relation(fields: [agentId], references: [id])
+  date        DateTime
+  startDate   DateTime?
+  endDate     DateTime?
+  status      RouteStatus @default(DRAFT)
+  totalPoints Int         @default(0)
+  completedPoints Int     @default(0)
+  totalDistance Float?     // km
+  totalDuration Int?       // minutes
+
+  // Relations
+  points      RoutePoint[]
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([agentId])
+  @@index([date])
+  @@index([status])
+}
+
+enum PointStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+model RoutePoint {
+  id          String      @id @default(cuid())
+  routeId     String
+  route       Route       @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  orderIndex  Int         // order in route
+  plannedTime String?     // "09:00"
+  actualTime  String?
+  duration    Int?        // minutes spent
+  status      PointStatus @default(PENDING)
+  lat         Float
+  lng         Float
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([routeId])
+  @@index([customerId])
+}
+
+// ===== VISITS =====
+enum VisitStatus {
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+model Visit {
+  id          String      @id @default(cuid())
+  agentId     String
+  agent       User        @relation(fields: [agentId], references: [id])
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  checkInTime DateTime
+  checkOutTime DateTime?
+  duration    Int?        // minutes
+  checkInLat  Float
+  checkInLng  Float
+  checkOutLat Float?
+  checkOutLng Float?
+  status      VisitStatus @default(CHECKED_IN)
+  notes       String?
+
+  // Relations
+  photos      Photo[]
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([agentId])
+  @@index([customerId])
+  @@index([checkInTime])
+}
+
+// ===== TASKS =====
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  assigneeId  String
+  assignee    User         @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdById String
+  createdBy   User         @relation("CreatedTasks", fields: [createdById], references: [id])
+  customerId  String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
+}
+
+// ===== PHOTOS =====
+enum PhotoStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Photo {
+  id          String      @id @default(cuid())
+  agentId     String
+  agent       User        @relation(fields: [agentId], references: [id])
+  visitId     String?
+  visit       Visit?      @relation(fields: [visitId], references: [id])
+  url         String
+  thumbnailUrl String?
+  lat         Float?
+  lng         Float?
+  status      PhotoStatus @default(PENDING)
+  hasWatermark Boolean    @default(false)
+  fileSize    Int?        // bytes
+  notes       String?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([agentId])
+  @@index([visitId])
+  @@index([status])
+}
+
+// ===== ALERTS =====
+enum AlertType {
+  CRITICAL
+  WARNING
+  INFO
+  SUCCESS
+}
+
+enum AlertCategory {
+  GPS
+  BATTERY
+  GEOFENCE
+  SPEED
+  ROUTE
+  SYSTEM
+  VISIT
+}
+
+model Alert {
+  id          String        @id @default(cuid())
+  type        AlertType
+  category    AlertCategory
+  title       String
+  description String
+  agentId     String?
+  agent       User?         @relation(fields: [agentId], references: [id])
+  isRead      Boolean       @default(false)
+  isResolved  Boolean       @default(false)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([agentId])
+  @@index([type])
+  @@index([isRead])
+}
+
+// ===== REALTIME GPS =====
+model AgentLocation {
+  id        String   @id @default(cuid())
+  agentId   String
+  agent     User     @relation(fields: [agentId], references: [id])
+  lat       Float
+  lng       Float
+  speed     Float?   // km/h
+  heading   Float?   // degrees
+  battery   Float?   // percentage
+  accuracy  Float?   // meters
+
+  createdAt DateTime @default(now())
+
+  @@index([agentId])
+  @@index([createdAt])
+}
+
+// ===== NOTIFICATIONS =====
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  type      String   // check_in, check_out, off_route, etc.
+  isRead    Boolean  @default(false)
+  data      Json?    // extra payload
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+// ===== AUDIT LOG =====
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String   // CREATE, UPDATE, DELETE
+  entity    String   // User, Customer, Route, etc.
+  entityId  String?
+  details   Json?
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+// ===== SETTINGS =====
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+
+  updatedAt DateTime @updatedAt
+}
