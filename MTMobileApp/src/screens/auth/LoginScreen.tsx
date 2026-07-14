@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -12,27 +13,21 @@ import {
   Platform,
 } from 'react-native';
 import { useAuthStore } from '../../store/auth';
+import { FIELD_APP_CONFIG } from '../../config/app';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [tenantSlug, setTenantSlug] = useState('');
-  const [serverUrl, setServerUrl] = useState('https://app.leaddrivecrm.org');
   const [showPassword, setShowPassword] = useState(false);
   const { login, loading } = useAuthStore();
 
   const handleLogin = async () => {
-    if (
-      !email.trim() ||
-      !password.trim() ||
-      !tenantSlug.trim() ||
-      !serverUrl.trim()
-    ) {
-      Alert.alert('Xəta', 'Server, təşkilat, e-poçt və şifrəni daxil edin');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Xəta', 'E-poçt və şifrəni daxil edin');
       return;
     }
     try {
-      await login(email.trim(), password, tenantSlug.trim(), serverUrl.trim());
+      await login(email.trim(), password);
     } catch (err: any) {
       Alert.alert('Giriş xətası', err.message || 'Yanlış e-poçt və ya şifrə');
     }
@@ -44,41 +39,27 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inner}
       >
-        {/* Logo */}
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>M</Text>
-          </View>
+          <Image
+            source={require('../../assets/leaddrive-mark.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.title}>LeadDrive Field</Text>
           <Text style={styles.subtitle}>Marşrut və sahə işi</Text>
+          <Text style={styles.organization}>
+            {FIELD_APP_CONFIG.organizationName}
+          </Text>
         </View>
 
-        {/* Form */}
         <View style={styles.form}>
-          <Text style={styles.label}>Server</Text>
-          <TextInput
-            style={styles.input}
-            value={serverUrl}
-            onChangeText={setServerUrl}
-            placeholder="https://app.leaddrivecrm.org"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <Text style={styles.label}>Təşkilat kodu</Text>
-          <TextInput
-            style={styles.input}
-            value={tenantSlug}
-            onChangeText={setTenantSlug}
-            placeholder="mars"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
           <Text style={styles.label}>E-poçt</Text>
           <TextInput
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="agent@mtm.az"
+            placeholder="ad@şirkət.az"
+            placeholderTextColor="#6b7280"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -87,15 +68,20 @@ export default function LoginScreen() {
           <Text style={styles.label}>Şifrə</Text>
           <View style={styles.passwordContainer}>
             <TextInput
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              style={[styles.input, styles.passwordInput]}
               value={password}
               onChangeText={setPassword}
               placeholder="••••••••"
+              placeholderTextColor="#6b7280"
               secureTextEntry={!showPassword}
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
               style={styles.eyeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={
+                showPassword ? 'Şifrəni gizlət' : 'Şifrəni göstər'
+              }
             >
               <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁'}</Text>
             </TouchableOpacity>
@@ -127,17 +113,19 @@ const styles = StyleSheet.create({
   inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
   logoContainer: { alignItems: 'center', marginBottom: 40 },
   logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: '#6C63FF',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 92,
+    height: 92,
+    borderRadius: 18,
     marginBottom: 16,
   },
-  logoText: { color: '#fff', fontSize: 36, fontWeight: '800' },
   title: { fontSize: 28, fontWeight: '700', color: '#1a1a2e' },
   subtitle: { fontSize: 14, color: '#6b7280', marginTop: 4 },
+  organization: {
+    color: '#0B3157',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 10,
+  },
   form: { gap: 4 },
   label: {
     fontSize: 14,
@@ -157,6 +145,7 @@ const styles = StyleSheet.create({
     color: '#1a1a2e',
     marginBottom: 4,
   },
+  passwordInput: { flex: 1, marginBottom: 0, paddingRight: 52 },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',

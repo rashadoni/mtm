@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FIELD_APP_CONFIG } from '../config/app';
 
-const DEFAULT_API_BASE = 'https://app.leaddrivecrm.org/api/v1/mtm';
+const DEFAULT_API_BASE = FIELD_APP_CONFIG.apiBaseUrl;
 const TOKEN_KEY = 'mtm-token';
 const BASE_URL_KEY = 'mtm-api-base';
 const TENANT_KEY = 'mtm-tenant-slug';
@@ -91,21 +92,20 @@ class ApiService {
     return body as T;
   }
 
-  async login(
-    email: string,
-    password: string,
-    organizationSlug: string,
-    serverUrl: string,
-  ) {
+  async login(email: string, password: string) {
     await Promise.all([
-      this.setBaseUrl(serverUrl),
-      this.setTenantSlug(organizationSlug),
+      this.setBaseUrl(FIELD_APP_CONFIG.apiBaseUrl),
+      this.setTenantSlug(FIELD_APP_CONFIG.organizationSlug),
     ]);
     const response = await this.request<{
       data: { token: string; agent: any };
     }>('/mobile/auth', {
       method: 'POST',
-      body: JSON.stringify({ email, password, organizationSlug }),
+      body: JSON.stringify({
+        email,
+        password,
+        organizationSlug: FIELD_APP_CONFIG.organizationSlug,
+      }),
     });
     await this.setToken(response.data.token);
     return response.data.agent;

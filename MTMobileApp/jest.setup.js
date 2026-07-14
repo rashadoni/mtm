@@ -18,7 +18,7 @@ jest.mock('@react-native-community/geolocation', () => ({
 jest.mock('react-native-device-info', () => ({
   __esModule: true,
   default: {
-    getVersion: jest.fn(() => '1.3.1'),
+    getVersion: jest.fn(() => '1.3.3'),
   },
 }));
 

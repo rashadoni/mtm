@@ -14,12 +14,7 @@ interface AuthStore {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: (
-    email: string,
-    password: string,
-    tenantSlug: string,
-    serverUrl: string,
-  ) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -29,10 +24,10 @@ export const useAuthStore = create<AuthStore>(set => ({
   isAuthenticated: false,
   loading: true,
 
-  login: async (email, password, tenantSlug, serverUrl) => {
+  login: async (email, password) => {
     set({ loading: true });
     try {
-      const agent = await api.login(email, password, tenantSlug, serverUrl);
+      const agent = await api.login(email, password);
       set({ user: agent, isAuthenticated: true });
     } finally {
       set({ loading: false });
