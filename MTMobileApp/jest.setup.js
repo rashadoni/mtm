@@ -15,6 +15,13 @@ jest.mock('@react-native-community/geolocation', () => ({
   clearWatch: jest.fn(),
 }));
 
+jest.mock('react-native-device-info', () => ({
+  __esModule: true,
+  default: {
+    getVersion: jest.fn(() => '1.3.1'),
+  },
+}));
+
 jest.mock('react-native-vision-camera', () => ({
   Camera: 'Camera',
   useCameraDevice: jest.fn(() => null),

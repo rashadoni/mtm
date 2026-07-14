@@ -12,10 +12,12 @@ import {
   Modal,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DeviceInfo from 'react-native-device-info';
 import { useAuthStore } from '../../store/auth';
 
 const THEME_KEY = 'mtm-theme';
 const LANG_KEY = 'mtm-language';
+const APP_VERSION = DeviceInfo.getVersion();
 
 type Language = 'az' | 'ru' | 'en';
 
@@ -49,7 +51,7 @@ const LABELS: Record<Language, Record<string, string>> = {
     helpText: 'Problem və ya sualınız varsa bizimlə əlaqə saxlayın',
     contactEmail: 'E-poçt: support@mtm.az',
     contactPhone: 'Telefon: +994 50 123 45 67',
-    version: 'LeadDrive Field v1.3.0',
+    version: `LeadDrive Field v${APP_VERSION}`,
     company: 'Guven Technology MMC',
     selectLanguage: 'Dil seçin',
     close: 'Bağla',
@@ -83,7 +85,7 @@ const LABELS: Record<Language, Record<string, string>> = {
     helpText: 'Если у вас есть вопросы, свяжитесь с нами',
     contactEmail: 'Email: support@mtm.az',
     contactPhone: 'Телефон: +994 50 123 45 67',
-    version: 'LeadDrive Field v1.3.0',
+    version: `LeadDrive Field v${APP_VERSION}`,
     company: 'Guven Technology MMC',
     selectLanguage: 'Выберите язык',
     close: 'Закрыть',
@@ -117,7 +119,7 @@ const LABELS: Record<Language, Record<string, string>> = {
     helpText: 'Contact us if you have questions',
     contactEmail: 'Email: support@mtm.az',
     contactPhone: 'Phone: +994 50 123 45 67',
-    version: 'LeadDrive Field v1.3.0',
+    version: `LeadDrive Field v${APP_VERSION}`,
     company: 'Guven Technology MMC',
     selectLanguage: 'Select language',
     close: 'Close',
