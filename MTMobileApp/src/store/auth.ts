@@ -14,21 +14,26 @@ interface AuthStore {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+    tenantSlug: string,
+    serverUrl: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
+export const useAuthStore = create<AuthStore>(set => ({
   user: null,
   isAuthenticated: false,
   loading: true,
 
-  login: async (email, password) => {
+  login: async (email, password, tenantSlug, serverUrl) => {
     set({ loading: true });
     try {
-      const { user } = await api.login(email, password);
-      set({ user, isAuthenticated: true });
+      const agent = await api.login(email, password, tenantSlug, serverUrl);
+      set({ user: agent, isAuthenticated: true });
     } finally {
       set({ loading: false });
     }
@@ -42,9 +47,12 @@ export const useAuthStore = create<AuthStore>((set) => ({
   checkAuth: async () => {
     try {
       const token = await api.getToken();
-      if (!token) { set({ loading: false }); return; }
-      const user = await api.getMe();
-      set({ user, isAuthenticated: true });
+      if (!token) {
+        set({ loading: false });
+        return;
+      }
+      const { agent } = await api.getProfile();
+      set({ user: agent, isAuthenticated: true });
     } catch {
       set({ user: null, isAuthenticated: false });
     } finally {

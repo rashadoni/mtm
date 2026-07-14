@@ -1,135 +1,114 @@
-// Offline Mode Service — queue actions when no internet, sync when back online
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from './api';
 import NetInfo from '@react-native-community/netinfo';
-
-interface QueuedAction {
-  id: string;
-  type: 'check_in' | 'check_out' | 'order' | 'photo' | 'note' | 'stock' | 'task_update';
-  payload: any;
-  timestamp: string;
+import { api } from './api';
+export interface SyncOperation {
+  operationId: string;
+  op: 'create' | 'update';
+  entity: 'visits' | 'visitActions' | 'tasks';
+  data: Record<string, unknown>;
+  clientTimestamp: string;
   retries: number;
+  lastError?: string;
 }
-
-const QUEUE_KEY = 'mtm_offline_queue';
-
+const QUEUE_KEY = 'mtm-sync-outbox-v2';
+const CLIENT_KEY = 'mtm-sync-client-id';
+export function createOperationId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const value = Math.floor(Math.random() * 16);
+    return (char === 'x' ? value : (value & 3) | 8).toString(16);
+  });
+}
 class OfflineService {
-  private isOnline: boolean = true;
-  private syncing: boolean = false;
-
+  private online = true;
+  private syncing = false;
+  private unsubscribe?: () => void;
   async init() {
-    // Listen for network changes
-    NetInfo.addEventListener(state => {
-      const wasOffline = !this.isOnline;
-      this.isOnline = state.isConnected ?? false;
-
-      if (wasOffline && this.isOnline) {
-        console.log('[Offline] Back online — syncing queued actions');
-        this.syncQueue();
-      }
-    });
-
-    // Check initial state
+    if (this.unsubscribe) return;
     const state = await NetInfo.fetch();
-    this.isOnline = state.isConnected ?? false;
+    this.online = Boolean(state.isConnected);
+    this.unsubscribe = NetInfo.addEventListener(next => {
+      const reconnected = !this.online && Boolean(next.isConnected);
+      this.online = Boolean(next.isConnected);
+      if (reconnected) void this.syncQueue();
+    });
+    if (this.online) void this.syncQueue();
   }
-
-  isConnected(): boolean {
-    return this.isOnline;
+  isConnected() {
+    return this.online;
   }
-
-  // Add action to offline queue
-  async queueAction(type: QueuedAction['type'], payload: any) {
-    const queue = await this.getQueue();
-    const action: QueuedAction = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type,
-      payload,
-      timestamp: new Date().toISOString(),
-      retries: 0,
-    };
-    queue.push(action);
-    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-    console.log(`[Offline] Queued: ${type} (${queue.length} total)`);
-    return action.id;
-  }
-
-  // Get all queued actions
-  async getQueue(): Promise<QueuedAction[]> {
+  async getQueue(): Promise<SyncOperation[]> {
     const raw = await AsyncStorage.getItem(QUEUE_KEY);
     return raw ? JSON.parse(raw) : [];
   }
-
-  // Sync all queued actions to server
+  async enqueue(
+    entity: SyncOperation['entity'],
+    op: SyncOperation['op'],
+    data: Record<string, unknown>,
+  ) {
+    const queue = await this.getQueue();
+    const operation = {
+      operationId: createOperationId(),
+      entity,
+      op,
+      data,
+      clientTimestamp: new Date().toISOString(),
+      retries: 0,
+    };
+    queue.push(operation);
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    if (this.online) void this.syncQueue();
+    return operation;
+  }
+  private async getClientId() {
+    const current = await AsyncStorage.getItem(CLIENT_KEY);
+    if (current) return current;
+    const next = `android-${createOperationId()}`;
+    await AsyncStorage.setItem(CLIENT_KEY, next);
+    return next;
+  }
   async syncQueue() {
-    if (this.syncing || !this.isOnline) return;
+    if (this.syncing || !this.online) return;
+    const queue = await this.getQueue();
+    if (!queue.length) return;
     this.syncing = true;
-
     try {
-      const queue = await this.getQueue();
-      if (queue.length === 0) { this.syncing = false; return; }
-
-      console.log(`[Offline] Syncing ${queue.length} queued actions...`);
-      const failed: QueuedAction[] = [];
-
-      for (const action of queue) {
-        try {
-          await this.executeAction(action);
-          console.log(`[Offline] Synced: ${action.type} (${action.id})`);
-        } catch (err) {
-          action.retries++;
-          if (action.retries < 3) {
-            failed.push(action);
-            console.warn(`[Offline] Failed (retry ${action.retries}): ${action.type}`);
-          } else {
-            console.error(`[Offline] Dropped after 3 retries: ${action.type}`);
-          }
-        }
-      }
-
-      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(failed));
-      console.log(`[Offline] Sync complete. ${failed.length} remaining.`);
+      const response = await api.pushSync(
+        await this.getClientId(),
+        queue.slice(0, 100),
+      );
+      const map = new Map(
+        response.results.map(result => [result.operationId, result]),
+      );
+      const remaining = queue.flatMap(operation => {
+        const result = map.get(operation.operationId);
+        if (result?.status === 'ok' || result?.status === 'conflict') return [];
+        return [
+          {
+            ...operation,
+            retries: operation.retries + 1,
+            lastError: result?.error || 'Sync failed',
+          },
+        ];
+      });
+      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(remaining));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Sync failed';
+      await AsyncStorage.setItem(
+        QUEUE_KEY,
+        JSON.stringify(
+          queue.map(item => ({
+            ...item,
+            retries: item.retries + 1,
+            lastError: message,
+          })),
+        ),
+      );
     } finally {
       this.syncing = false;
     }
   }
-
-  private async executeAction(action: QueuedAction) {
-    switch (action.type) {
-      case 'check_in':
-        await api.checkIn(action.payload.customerId, action.payload.lat, action.payload.lng);
-        break;
-      case 'check_out':
-        await api.checkOut(action.payload.visitId, action.payload.lat, action.payload.lng);
-        break;
-      case 'order':
-        // await api.createOrder(action.payload);
-        break;
-      case 'photo':
-        await api.uploadPhotoMeta(action.payload.visitId, action.payload.url, action.payload.lat, action.payload.lng);
-        break;
-      case 'note':
-        // await api.createNote(action.payload);
-        break;
-      case 'stock':
-        // await api.submitStock(action.payload);
-        break;
-      case 'task_update':
-        await api.updateTaskStatus(action.payload.taskId, action.payload.status);
-        break;
-    }
-  }
-
-  // Clear queue
-  async clearQueue() {
-    await AsyncStorage.removeItem(QUEUE_KEY);
-  }
-
-  // Get queue count for UI badge
-  async getQueueCount(): Promise<number> {
-    const queue = await this.getQueue();
-    return queue.length;
+  async getQueueCount() {
+    return (await this.getQueue()).length;
   }
 }
-
 export const offlineService = new OfflineService();

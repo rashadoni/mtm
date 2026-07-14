@@ -1,141 +1,201 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, RefreshControl, Alert,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { api } from '../../services/api';
-
-const mockTasks = [
-  { id: '1', title: 'Neptun mağazasına yeni məhsul təqdimatı', description: 'Yeni məhsul xətti təqdimatı', status: 'TODO', priority: 'HIGH', dueDate: '2026-03-19' },
-  { id: '2', title: 'Bravo ilə müqavilə yeniləməsi', description: 'Satış müqaviləsini yenilə', status: 'IN_PROGRESS', priority: 'MEDIUM', dueDate: '2026-03-20' },
-  { id: '3', title: 'Gilan distribütor hesabatı hazırla', description: 'Aylıq satış hesabatı', status: 'TODO', priority: 'LOW', dueDate: '2026-03-22' },
-  { id: '4', title: 'Araz Market stok yoxlaması', description: 'Stok vəziyyəti yoxla', status: 'DONE', priority: 'MEDIUM', dueDate: '2026-03-17' },
-];
-
-const priorityConfig: Record<string, { color: string; label: string }> = {
-  URGENT: { color: '#E74C3C', label: 'Təcili' },
-  HIGH: { color: '#FFC107', label: 'Yüksək' },
-  MEDIUM: { color: '#3498DB', label: 'Orta' },
-  LOW: { color: '#00BFA6', label: 'Aşağı' },
+import { offlineService } from '../../services/offline';
+const labels: Record<string, string> = {
+  PENDING: 'Gözləyir',
+  IN_PROGRESS: 'Davam edir',
+  COMPLETED: 'Tamamlandı',
+  OVERDUE: 'Gecikib',
+  CANCELLED: 'Ləğv edilib',
 };
-
-const statusConfig: Record<string, { color: string; label: string; next: string }> = {
-  TODO: { color: '#FFC107', label: 'Ediləcək', next: 'IN_PROGRESS' },
-  IN_PROGRESS: { color: '#3498DB', label: 'Davam edir', next: 'DONE' },
-  DONE: { color: '#00BFA6', label: 'Tamamlandı', next: '' },
-};
-
 export default function TasksScreen() {
-  const [tasks, setTasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'TODO' | 'IN_PROGRESS' | 'DONE'>('all');
-
-  const loadTasks = async () => {
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
     try {
-      const { tasks: serverTasks } = await api.getMyTasks();
-      if (serverTasks.length > 0) setTasks(serverTasks);
-    } catch { /* use mock */ }
-  };
-
-  useEffect(() => { loadTasks(); }, []);
-
-  const handleStatusChange = async (task: typeof mockTasks[0]) => {
-    const nextStatus = statusConfig[task.status]?.next;
-    if (!nextStatus) return;
-
-    setTasks(tasks.map(t => t.id === task.id ? { ...t, status: nextStatus } : t));
+      setError('');
+      setTasks(await api.getMyTasks());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Tapşırıqlar yüklənmədi');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+  useEffect(() => {
+    void offlineService.init();
+    void load();
+  }, [load]);
+  const advance = async (task: any) => {
+    const next =
+      task.status === 'PENDING' || task.status === 'OVERDUE'
+        ? 'IN_PROGRESS'
+        : task.status === 'IN_PROGRESS'
+        ? 'COMPLETED'
+        : null;
+    if (!next) return;
     try {
-      await api.updateTaskStatus(task.id, nextStatus);
-    } catch { /* keep local change */ }
+      if (offlineService.isConnected())
+        await api.updateTask(
+          task.id,
+          next,
+          next === 'COMPLETED' ? 'Completed in field app' : undefined,
+        );
+      else
+        await offlineService.enqueue('tasks', 'update', {
+          id: task.id,
+          status: next,
+          result: next === 'COMPLETED' ? 'Completed in field app' : undefined,
+        });
+      setTasks(current =>
+        current.map(item =>
+          item.id === task.id ? { ...item, status: next } : item,
+        ),
+      );
+    } catch (err) {
+      Alert.alert(
+        'Xəta',
+        err instanceof Error ? err.message : 'Status dəyişmədi',
+      );
+    }
   };
-
-  const filtered = filter === 'all' ? tasks : tasks.filter(t => t.status === filter);
-
+  if (loading)
+    return (
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator color="#2563EB" />
+      </SafeAreaView>
+    );
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Tapşırıqlar</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{tasks.filter(t => t.status !== 'DONE').length}</Text>
-        </View>
+        <Text style={styles.count}>
+          {tasks.filter(item => item.status !== 'COMPLETED').length} aktiv
+        </Text>
       </View>
-
-      {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters}>
-        {[
-          { key: 'all', label: 'Hamısı' },
-          { key: 'TODO', label: 'Ediləcək' },
-          { key: 'IN_PROGRESS', label: 'Davam edir' },
-          { key: 'DONE', label: 'Tamamlandı' },
-        ].map(f => (
+      {error ? (
+        <TouchableOpacity style={styles.error} onPress={load}>
+          <Text style={styles.errorText}>{error}. Yenidən yoxla</Text>
+        </TouchableOpacity>
+      ) : null}
+      <ScrollView
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load();
+            }}
+          />
+        }
+      >
+        {tasks.map(task => (
           <TouchableOpacity
-            key={f.key}
-            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
-            onPress={() => setFilter(f.key as any)}
+            key={task.id}
+            style={styles.row}
+            onPress={() => advance(task)}
           >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+            <View
+              style={[
+                styles.priority,
+                {
+                  backgroundColor:
+                    task.priority === 'URGENT'
+                      ? '#DC2626'
+                      : task.priority === 'HIGH'
+                      ? '#D97706'
+                      : '#2563EB',
+                },
+              ]}
+            />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.taskTitle,
+                  task.status === 'COMPLETED' && styles.done,
+                ]}
+              >
+                {task.title}
+              </Text>
+              {task.description ? (
+                <Text style={styles.description}>{task.description}</Text>
+              ) : null}
+              <View style={styles.meta}>
+                <Text style={styles.status}>
+                  {labels[task.status] || task.status}
+                </Text>
+                <Text style={styles.due}>
+                  {task.dueDate
+                    ? new Date(task.dueDate).toLocaleDateString()
+                    : ''}
+                </Text>
+              </View>
+            </View>
           </TouchableOpacity>
         ))}
-      </ScrollView>
-
-      <ScrollView style={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await loadTasks(); setRefreshing(false); }} />}>
-        {filtered.map(task => {
-          const priority = priorityConfig[task.priority] || priorityConfig.MEDIUM;
-          const status = statusConfig[task.status] || statusConfig.TODO;
-
-          return (
-            <TouchableOpacity key={task.id} style={styles.taskCard} onPress={() => handleStatusChange(task)} activeOpacity={0.7}>
-              <View style={[styles.priorityBar, { backgroundColor: priority.color }]} />
-              <View style={styles.taskContent}>
-                <View style={styles.taskHeader}>
-                  <Text style={[styles.taskTitle, task.status === 'DONE' && styles.taskDone]}>{task.title}</Text>
-                  <View style={[styles.statusDot, { backgroundColor: status.color }]} />
-                </View>
-                <Text style={styles.taskDesc}>{task.description}</Text>
-                <View style={styles.taskFooter}>
-                  <View style={[styles.priorityBadge, { backgroundColor: priority.color + '20' }]}>
-                    <Text style={[styles.priorityText, { color: priority.color }]}>{priority.label}</Text>
-                  </View>
-                  <Text style={styles.dueDate}>📅 {task.dueDate}</Text>
-                  {status.next && (
-                    <Text style={[styles.nextAction, { color: status.color }]}>
-                      → {statusConfig[status.next]?.label}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-        <View style={{ height: 100 }} />
+        {!tasks.length ? (
+          <Text style={styles.empty}>Tapşırıq yoxdur</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F5F9' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  title: { fontSize: 24, fontWeight: '700', color: '#1a1a2e' },
-  badge: { backgroundColor: '#E74C3C', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  filters: { paddingHorizontal: 16, marginBottom: 12, maxHeight: 44 },
-  filterBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#fff', marginRight: 8 },
-  filterBtnActive: { backgroundColor: '#6C63FF' },
-  filterText: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
-  filterTextActive: { color: '#fff' },
-  list: { flex: 1, paddingHorizontal: 20 },
-  taskCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  priorityBar: { width: 4 },
-  taskContent: { flex: 1, padding: 16 },
-  taskHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  taskTitle: { fontSize: 15, fontWeight: '600', color: '#1a1a2e', flex: 1 },
-  taskDone: { textDecorationLine: 'line-through', color: '#9ca3af' },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  taskDesc: { fontSize: 13, color: '#6b7280', marginBottom: 10 },
-  taskFooter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  priorityBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  priorityText: { fontSize: 11, fontWeight: '600' },
-  dueDate: { fontSize: 12, color: '#9ca3af' },
-  nextAction: { fontSize: 12, fontWeight: '600', marginLeft: 'auto' },
+  container: { flex: 1, backgroundColor: '#F6F7F9' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: {
+    padding: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  title: { fontSize: 22, fontWeight: '700', color: '#111827' },
+  count: { fontSize: 13, color: '#6B7280' },
+  error: { margin: 12, padding: 12, backgroundColor: '#FEF2F2' },
+  errorText: { color: '#B91C1C' },
+  list: { padding: 14, paddingBottom: 100 },
+  row: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 6,
+    marginBottom: 9,
+    overflow: 'hidden',
+  },
+  priority: { width: 4 },
+  taskTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    paddingHorizontal: 13,
+    paddingTop: 12,
+  },
+  done: { color: '#6B7280', textDecorationLine: 'line-through' },
+  description: {
+    fontSize: 13,
+    color: '#6B7280',
+    paddingHorizontal: 13,
+    marginTop: 3,
+  },
+  meta: { flexDirection: 'row', justifyContent: 'space-between', padding: 13 },
+  status: { fontSize: 12, color: '#2563EB', fontWeight: '700' },
+  due: { fontSize: 12, color: '#6B7280' },
+  empty: { textAlign: 'center', color: '#6B7280', marginTop: 60 },
 });

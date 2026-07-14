@@ -3,7 +3,6 @@
 // npm install @react-native-firebase/app @react-native-firebase/messaging
 
 import { Platform, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 class NotificationService {
   private fcmToken: string | null = null;
@@ -55,7 +54,7 @@ class NotificationService {
   }
 
   // Schedule local notification
-  async scheduleLocal(title: string, body: string, delay: number = 0) {
+  async scheduleLocal(title: string, body: string, _delay: number = 0) {
     // PushNotification.localNotificationSchedule({
     //   title,
     //   message: body,
@@ -67,11 +66,17 @@ class NotificationService {
 
   // Notification types for MTM
   async notifyCheckIn(customerName: string) {
-    await this.scheduleLocal('Check-in', `${customerName} müştərisinə check-in edildi`);
+    await this.scheduleLocal(
+      'Check-in',
+      `${customerName} müştərisinə check-in edildi`,
+    );
   }
 
   async notifyCheckOut(customerName: string, duration: number) {
-    await this.scheduleLocal('Check-out', `${customerName} — ${duration} dəq ziyarət`);
+    await this.scheduleLocal(
+      'Check-out',
+      `${customerName} — ${duration} dəq ziyarət`,
+    );
   }
 
   async notifyNewTask(taskTitle: string) {
@@ -79,11 +84,17 @@ class NotificationService {
   }
 
   async notifyRouteDeviation() {
-    await this.scheduleLocal('⚠️ Marşrut Sapması', 'Planlaşdırılan marşrutdan sapırsınız');
+    await this.scheduleLocal(
+      '⚠️ Marşrut Sapması',
+      'Planlaşdırılan marşrutdan sapırsınız',
+    );
   }
 
   async notifyLowBattery(level: number) {
-    await this.scheduleLocal('🔋 Zəif Batareya', `Batareya ${level}% səviyyəsindədir`);
+    await this.scheduleLocal(
+      '🔋 Zəif Batareya',
+      `Batareya ${level}% səviyyəsindədir`,
+    );
   }
 }
 
