@@ -92,10 +92,11 @@ class ApiService {
     return body as T;
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, organizationSlug: string) {
+    const normalizedOrganizationSlug = organizationSlug.trim().toLowerCase();
     await Promise.all([
       this.setBaseUrl(FIELD_APP_CONFIG.apiBaseUrl),
-      this.setTenantSlug(FIELD_APP_CONFIG.organizationSlug),
+      this.setTenantSlug(normalizedOrganizationSlug),
     ]);
     const response = await this.request<{
       data: { token: string; agent: any };
@@ -104,7 +105,7 @@ class ApiService {
       body: JSON.stringify({
         email,
         password,
-        organizationSlug: FIELD_APP_CONFIG.organizationSlug,
+        organizationSlug: normalizedOrganizationSlug,
       }),
     });
     await this.setToken(response.data.token);

@@ -21,14 +21,14 @@ describe('mobile API contract helpers', () => {
     );
   });
 
-  it('keeps the Zeytun tenant in the auth request without exposing an input', async () => {
+  it('sends the tenant selected by the user in the auth request', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ data: { token: 'test-token', agent: {} } }),
     } as Response);
 
-    await api.login('agent@example.com', 'secret');
+    await api.login('agent@example.com', 'secret', ' Zeytun ');
 
     expect(fetchMock).toHaveBeenCalledWith(
       `${FIELD_APP_CONFIG.apiBaseUrl}/mobile/auth`,
