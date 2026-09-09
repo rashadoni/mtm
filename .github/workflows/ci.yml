@@ -26,4 +26,9 @@ jobs:
         with:
           node-version: "22"
       - run: npm install --no-audit --no-fund
+      # Prisma client types are generated, not committed. Without this the
+      # backend build fails on fields that do exist in the schema.
+      - name: Generate Prisma client
+        if: matrix.project == 'backend'
+        run: npm run db:generate
       - run: npm run build
